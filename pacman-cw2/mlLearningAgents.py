@@ -321,7 +321,7 @@ class QLearnAgent(Agent):
         print(state.isWin())
         # If wins, set the Q-value of the state and action to 500
         if state.isWin():
-            self.qTable[(self.prevState, self.prevAction)] = 1200
+            self.qTable[(self.prevState, self.prevAction)] = 900
         # If loses, set the Q-value of the state and action to -500
         elif state.isLose():
             self.qTable[(self.prevState, self.prevAction)] = -1000
