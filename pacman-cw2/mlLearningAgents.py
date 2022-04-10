@@ -25,8 +25,11 @@
 from __future__ import absolute_import
 from __future__ import print_function
 from asyncio.windows_events import NULL
-
+from os import stat
+from time import sleep
 import random
+from re import S
+from turtle import update
 
 from regex import D
 
@@ -52,14 +55,46 @@ class GameStateFeatures:
 
         "*** YOUR CODE HERE ***"
         self.food = state.getFood()
-        self.capsules = state.getCapsules()
-        self.ghosts = state.getGhostStates()
-        self.scaredGhosts = [ghostState.scaredTimer for ghostState in self.ghosts]
-        self.pos = state.getPacmanPosition()
+        #count the number of food
+        self.foodCount = 0
+        ghosts = state.getGhostStates()
+        self.ghosts = [x.getPosition() for x in ghosts]
+        # self.pos = state.getPacmanPosition()
+        self.pos = state.getPacmanState()
         self.legalActions = state.getLegalPacmanActions()
         self.state = state
+        self.score = state.getScore()
 
         
+
+    def __eq__(self, other):
+        """
+        Allows two states to be compared.
+        """
+        if other is None:
+            return False
+        # TODO Check for type of other
+        if not self.pos == other.pos:
+            return False
+        if not self.food == other.food:
+            return False
+        if not self.ghosts == other.ghosts:
+            return False
+
+        return True
+
+    def __hash__(self):
+        """
+        Allows states to be keys of dictionaries.
+        """
+        # for i, state in enumerate(self.agentStates):
+        #     try:
+        #         int(hash(state))
+        #     except TypeError as e:
+        #         print(e)
+        #         # hash(state)
+        return int((hash(self.pos) +
+                    13 * hash(self.food) + 113 * hash((tuple)(self.ghosts)) )% 1048575)
 
 
 class QLearnAgent(Agent):
@@ -98,6 +133,7 @@ class QLearnAgent(Agent):
         self.directions = {Directions.NORTH: (0, 1), Directions.SOUTH: (0, -1), Directions.EAST: (1, 0), Directions.WEST: (-1, 0)}
         self.prevState = None
         self.prevAction = None
+        self.count = {}
 
     # Accessor functions for the variable episodesSoFar controlling learning
     def incrementEpisodesSoFar(self):
@@ -158,11 +194,11 @@ class QLearnAgent(Agent):
         """
         "*** YOUR CODE HERE ***"
         #if not in qtable, record as 0 and return
-        if (state.state, action) not in self.qTable:
+        if (state, action) not in self.qTable:
             # self.qTable[(state.pos, action)] = 0
             return 0
         #else return the value
-        return self.qTable[(state.state, action)]
+        return self.qTable[(state, action)]
 
     # WARNING: You will be tested on the functionality of this method
     # DO NOT change the function signature
@@ -178,8 +214,9 @@ class QLearnAgent(Agent):
         legalAction = state.legalActions
         maximum = -999999.0
         for i in legalAction:
-            if self.getQValue(state, i) > maximum:
-                maximum = self.getQValue(state, i)
+            temp = self.getQValue(state, i)
+            if temp > maximum:
+                maximum = temp
         return maximum
 
     # WARNING: You will be tested on the functionality of this method
@@ -200,7 +237,7 @@ class QLearnAgent(Agent):
         """
         "*** YOUR CODE HERE ***"
         #update the q-value of the state and action
-        self.qTable[(state.state, action)] = self.getQValue(state, action) + self.alpha * (reward + self.gamma * self.maxQValue(nextState) - self.getQValue(state, action))
+        self.qTable[(state, action)] = self.getQValue(state, action) + self.alpha * (reward + self.gamma * self.maxQValue(nextState) - self.getQValue(state, action))
 
     # WARNING: You will be tested on the functionality of this method
     # DO NOT change the function signature
@@ -215,7 +252,12 @@ class QLearnAgent(Agent):
             action: Action taken
         """
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        #if not in count, record as 1
+        if (state, action) not in self.count:
+            self.count[(state, action)] = 1
+        #else increment the count
+        else:
+            self.count[(state, action)] += 1
 
     # WARNING: You will be tested on the functionality of this method
     # DO NOT change the function signature
@@ -231,7 +273,13 @@ class QLearnAgent(Agent):
             Number of times that the action has been taken in a given state
         """
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        #if not in count, return 0
+        if (state, action) not in self.count:
+            return 0
+        #else return the count
+        return self.count[(state, action)]
+
+        
 
     # WARNING: You will be tested on the functionality of this method
     # DO NOT change the function signature
@@ -252,7 +300,12 @@ class QLearnAgent(Agent):
             The exploration value
         """
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        #if the count is 0, return optimistic value
+        if counts < counts:
+            return utility + 100*(self.maxAttempts - counts)    
+        #else return the utility
+        return utility
+
 
     # WARNING: You will be tested on the functionality of this method
     # DO NOT change the function signature
@@ -284,11 +337,10 @@ class QLearnAgent(Agent):
         # print("Score: ", state.getScore())
 
         stateFeatures = GameStateFeatures(state)
-        # print(self.qTable)
+        # print(len(self.qTable))
         if self.prevState is not None:
-            prevStateFeatures = GameStateFeatures(self.prevState)
             # learning
-            self.learn(prevStateFeatures, self.prevAction, self.computeReward(self.prevState, state), stateFeatures)
+            self.learn(self.prevState, self.prevAction, self.computeReward(self.prevState.state, state), stateFeatures)
         
         # exploration
         if util.flipCoin(self.epsilon):
@@ -298,13 +350,34 @@ class QLearnAgent(Agent):
             # Choose an action which has the maximum Q-value
             maximum = -999999.0
             for i in legal:
-                if self.getQValue(stateFeatures, i) > maximum:
-                    maximum = self.getQValue(stateFeatures, i)
+                tmp = self.getQValue(stateFeatures, i)
+                if tmp > maximum:
+                    maximum = tmp
                     action = i
             # If there is no action with a Q-value greater than 0, choose a random action
             if maximum == -999999.0:
                 action = random.choice(legal)
-        self.prevState = state
+        # print(self.getPacmanPosition(state))
+        # if self.getEpisodesSoFar() >= self.getNumTraining() and state.getPacmanPosition() == (5, 3):
+        #     # print(self.getQValue(, action))
+        #     print("+++++++++++++++++++++++++++++++++++++++++++++")
+        #     print("+++++++++++++++++++++++++++++++++++++++++++++")
+        #     print(action)
+        #     print(self.getQValue(stateFeatures, Directions.EAST))
+        #     print(self.getQValue(stateFeatures, Directions.WEST))
+        #     print(self.getQValue(stateFeatures, Directions.NORTH))
+        #     print(self.getQValue(stateFeatures, Directions.SOUTH))
+        #     print("+++++++++++++++++++++++++++++++++++++++++++++")
+        #     print(self.getCount(stateFeatures, Directions.EAST))
+        #     print(self.getCount(stateFeatures, Directions.WEST))
+        #     print(self.getCount(stateFeatures, Directions.NORTH))
+        #     print(self.getCount(stateFeatures, Directions.SOUTH))
+        #     print("+++++++++++++++++++++++++++++++++++++++++++++")
+        #     print("+++++++++++++++++++++++++++++++++++++++++++++")
+
+        #     sleep(12)
+        self.updateCount(stateFeatures, action)
+        self.prevState = stateFeatures
         self.prevAction = action
         return action
 
@@ -317,26 +390,28 @@ class QLearnAgent(Agent):
             state: the final game state
         """
         print(f"Game {self.getEpisodesSoFar()} just ended!")
-        prevStateFeature = GameStateFeatures(self.prevState)
         print(state.isWin())
         # If wins, set the Q-value of the state and action to 500
-        if state.isWin():
-            self.qTable[(self.prevState, self.prevAction)] = 900
-        # If loses, set the Q-value of the state and action to -500
-        elif state.isLose():
-            self.qTable[(self.prevState, self.prevAction)] = -1000
+        # if state.isWin():
+        #     self.qTable[(self.prevState, self.prevAction)] = 10000
+        # # If loses, set the Q-value of the state and action to -500
+        # elif state.isLose():
+            # self.qTable[(self.prevState, self.prevAction)] = -1000
         # Update Qlearning
         
-        self.learn(prevStateFeature, self.prevAction, self.computeReward(self.prevState, state), GameStateFeatures(state))
-
-
+        self.learn(self.prevState, self.prevAction, self.computeReward(self.prevState.state, state), GameStateFeatures(state))
+        self.updateCount(self.prevState, self.prevAction)
         # Keep track of the number of games played, and set learning
         # parameters to zero when we are done with the pre-set number
         # of training episodes
         self.incrementEpisodesSoFar()
+
         if self.getEpisodesSoFar() == self.getNumTraining():
+            print(len(self.count))
+
             msg = 'Training Done (turning off epsilon and alpha)'
             print('%s\n%s' % (msg, '-' * len(msg)))
             self.setAlpha(0)
             self.setEpsilon(0)
             self.prevState = None
+
